@@ -11,6 +11,7 @@ from transformations import Transformation
 from models.model_utils import pre_bgr_image, corner_sub_pix
 from dataclasses import replace
 from numba import njit
+from gridwindow.grid_window import MagicGrid
 
 
 @njit(cache=True)
@@ -104,72 +105,93 @@ class RefineDataset(Dataset):
         with open(labels, 'r') as f:
             self.labels = json.load(f)
         self.labels = self.labels['images']
-
+        
         seed = 42 if validation else None
         if seed is not None:
             random.seed(seed)
         self.transform = Transformation(configs, negative_p=0, refinenet=True, seed=seed)
 
     def __getitem__(self, idx):
+        if idx >= len(self.labels):
+            return
         label = self.labels[idx]
-        image = cv2.imread(os.path.join(self._images_folder, label['file_name']), cv2.IMREAD_COLOR)
+        try:
+        # Try reading the image
+            print('reading')
+            image = cv2.imread(os.path.join(self._images_folder, label['file_name']), cv2.IMREAD_COLOR)
+            
+            # If the image is None, the path might be invalid or the file is unreadable
+            if image is None:
+                print(f"Unable to read image at { label['file_name']}. Skipping...")
+                self.labels.pop(idx)
+                return 
+            #return image
+                # Apply pipeline of transformations
+            print('still reading')
+            image, keypoints, *_ = self.transform(image).values() # output an image of the train with the chessboard attached
 
-        # Apply pipeline of transformations
-        image, keypoints, *_ = self.transform(image).values()
+            patch_resized = []  # Just for visualization
 
-        patch_resized = []  # Just for visualization
+            heatmaps = []
+            patches = []
+            up_factor = 8 // self.s_factor
+            random.shuffle(keypoints)
+            for keypoint in keypoints:
+                patch, heat, corner = create_sample(image, up_factor, keypoint)
+                # Pad not implemented, sometimes there are regions not big enough, it's not a problem
+                if patch is None:
+                    continue
+                    
+                patches.append(patch)
+                heatmaps.append(heat)
 
-        heatmaps = []
-        patches = []
-        up_factor = 8 // self.s_factor
-        random.shuffle(keypoints)
-        for keypoint in keypoints:
-            patch, heat, corner = create_sample(image, up_factor, keypoint)
-            # Pad not implemented, sometimes there are regions not big enough, it's not a problem
-            if patch is None:
-                continue
+                # Just visualization
+                if self._visualize:
+                    # Visualization in original resolution is poor, visualize in 8x patch!
+                    patch_vis = cv2.resize(patch, (192, 192), cv2.INTER_CUBIC)
+                    corner_vis = (corner[0] + 64, corner[1] + 64)
+                    patch_vis = cv2.circle(patch_vis, (corner_vis[0], corner_vis[1]),
+                                        radius=5, color=(0, 255, 0),
+                                        thickness=2)
 
-            patches.append(patch)
-            heatmaps.append(heat)
+                    patch_vis = cv2.circle(patch_vis, (patch_vis.shape[1] // 2, patch_vis.shape[0]// 2),
+                                        radius=5, color=(0, 0, 255),
+                                        thickness=2)
+                    patch_resized.append(patch_vis)
 
-            # Just visualization
+                if len(patches) == self.total:
+                    break  # Done!
+
             if self._visualize:
-                # Visualization in original resolution is poor, visualize in 8x patch!
-                patch_vis = cv2.resize(patch, (192, 192), cv2.INTER_CUBIC)
-                corner_vis = (corner[0] + 64, corner[1] + 64)
-                patch_vis = cv2.circle(patch_vis, (corner_vis[0], corner_vis[1]),
-                                       radius=5, color=(0, 255, 0),
-                                       thickness=2)
+                
+                w = MagicGrid(640, 640, waitKey=0, draw_outline=True)
+                heatmaps_vis = [(h * 255).astype(np.uint8) for h in heatmaps]
+                if w.update([*patch_resized, *heatmaps_vis]) == ord('q'):
+                    import sys
+                    sys.exit()
 
-                patch_vis = cv2.circle(patch_vis, (patch_vis.shape[1] // 2, patch_vis.shape[0]// 2),
-                                       radius=5, color=(0, 0, 255),
-                                       thickness=2)
-                patch_resized.append(patch_vis)
+            patches = [pre_bgr_image(cv2.cvtColor(p, cv2.COLOR_BGR2GRAY)) for p in patches]
+            heatmaps = [h[None, ...] for h in heatmaps]
 
-            if len(patches) == self.total:
-                break  # Done!
+            # Must have same length for each batch.
+            # We duplicate samples to reach correct numbering
+            # Training with total < 16, this should not happen
+            missing = self.total - len(heatmaps)
+            for _ in range(missing):
+                idx = random.randint(0, len(patches) - 1)
+                patches.append(patches[idx])
+                heatmaps.append(heatmaps[idx])
 
-        if self._visualize:
-            from gridwindow import MagicGrid
-            w = MagicGrid(640, 640, waitKey=0, draw_outline=True)
-            heatmaps_vis = [(h * 255).astype(np.uint8) for h in heatmaps]
-            if w.update([*patch_resized, *heatmaps_vis]) == ord('q'):
-                import sys
-                sys.exit()
-
-        patches = [pre_bgr_image(cv2.cvtColor(p, cv2.COLOR_BGR2GRAY)) for p in patches]
-        heatmaps = [h[None, ...] for h in heatmaps]
-
-        # Must have same length for each batch.
-        # We duplicate samples to reach correct numbering
-        # Training with total < 16, this should not happen
-        missing = self.total - len(heatmaps)
-        for _ in range(missing):
-            idx = random.randint(0, len(patches) - 1)
-            patches.append(patches[idx])
-            heatmaps.append(heatmaps[idx])
-
-        return patches, heatmaps
+            return patches, heatmaps
+        
+        except Exception as e:
+            # Handle any exceptions, such as file not found or read errors
+            print(f"Error reading {label['file_name']}: {e}. Skipping...")
+            #self.labels.pop(idx)
+            return 
+        
+       
+        
 
     def __len__(self):
         return len(self.labels)
