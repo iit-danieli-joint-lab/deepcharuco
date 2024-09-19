@@ -6,7 +6,7 @@ from pydantic.dataclasses import dataclass
 
 
 # HARDCODED for the time being
-CONFIG_PATH = '/home/alessia/idjl-software/deepcharuco/src/demo_config.yaml'
+CONFIG_PATH = '/home/alessia/deepcharuco/src/demo_config.yaml'
 
 
 @dataclass
