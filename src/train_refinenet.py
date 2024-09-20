@@ -18,7 +18,7 @@ def custom_collate(batch):
 
 if __name__ == '__main__':
     config = load_configuration(configs.CONFIG_PATH)
-    total = 8
+    total = 4
 
     dataset = RefineDataset(config, config.train_labels, config.train_images,
                             visualize=True, validation=False, total=total)
@@ -43,7 +43,7 @@ if __name__ == '__main__':
     train_model = lRefineNet(model)
 
     logger = TensorBoardLogger("tb_logs", name="refinenet")
-    checkpoint_callback = ModelCheckpoint(dirpath="tb_logs/ckpts_refinenet/", save_top_k=10,
+    checkpoint_callback = ModelCheckpoint(dirpath="tb_logs/ckpts_refinenet/", save_top_k=1,
                                           monitor="val_refinenet_loss")
     trainer = pl.Trainer(max_epochs=2, logger=logger, accelerator="auto",
                          callbacks=[checkpoint_callback]) #,
