@@ -12,10 +12,10 @@ CONFIG_PATH = '/home/alessia/deepcharuco/src/demo_config.yaml'
 @dataclass
 class Config:
     board_name: str
-    row_count: int
-    col_count: int
+    #row_count: int
+    #col_count: int
     square_len: float
-    marker_len: float
+    #marker_len: float
 
     input_size: tuple[int, int]
     num_workers: int
@@ -31,8 +31,8 @@ class Config:
     # Self populated
     n_ids: Optional[int] = None
 
-    def __post_init__(self):
-        self.n_ids = (self.row_count - 1) * (self.col_count - 1)
+    # def __post_init__(self):
+    #     self.n_ids = (self.row_count - 1) * (self.col_count - 1)
 
 
 def load_configuration(path: str) -> Config:
@@ -47,7 +47,7 @@ if __name__ == '__main__':
     config = load_configuration(CONFIG_PATH)
 
     # Create an image from the gridboard
-    board = get_board(config)
+    #board = get_board(config)
     img, corners = board_image(board, (480, 480),
                                config.row_count, config.col_count)
     img = draw_inner_corners(img, corners, np.arange(config.n_ids), draw_ids=True)
