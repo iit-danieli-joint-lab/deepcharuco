@@ -2,7 +2,7 @@ import bpy
 import random
 import os
 from math import radians
-import cv2
+#import cv2
 import numpy as np
 import json
 
@@ -28,6 +28,7 @@ bpy.context.scene.cycles.device = 'GPU'
 prefs = bpy.context.preferences.addons['cycles'].preferences
 prefs.get_devices()
 
+
 # Print available devices to check which GPUs are available
 print("Available devices:")
 for i, device in enumerate(prefs.devices):
@@ -44,7 +45,8 @@ prefs.devices[1].use = True
 # for device in prefs.devices:
 #     if 'GPU_NAME' in device.name:
 #         device.use = True
-
+print(prefs.devices[0].name)
+print(prefs.devices[1].name)
 # Check enabled devices
 print("Enabled devices:", [d.name for d in prefs.devices if d.use])
 
@@ -63,10 +65,64 @@ bpy.context.scene.cycles.time_limit = 0
 # Enable Denoising
 bpy.context.scene.cycles.use_denoising = True
 
+# Path to the image file (adjust this path to where your texture is located)
+image_path = "./aruco_Example.png"
 
-winSize = (3,3)
-zeroZone = (-1, -1)
-criteria = (cv2.TERM_CRITERIA_EPS + cv2.TermCriteria_COUNT, 40, 0.0001)
+# Get the object (replace 'ArucoObjectName' with the actual object name in Blender)
+obj = bpy.data.objects['Aruco']
+
+# Ensure the object has an active material; if not, create one
+if not obj.data.materials:
+    mat = bpy.data.materials.new(name="ArucoMaterial")
+    obj.data.materials.append(mat)
+else:
+    mat = obj.data.materials[0]  # Use the first material
+
+# Enable 'use_nodes' so we can apply the texture
+mat.use_nodes = True
+nodes = mat.node_tree.nodes
+
+# Remove the default node (if exists) and add a new Principled BSDF shader
+for node in nodes:
+    nodes.remove(node)  # Clean up all existing nodes if needed
+
+# Add a new Principled BSDF node
+principled_bsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
+
+# Add an Image Texture node
+tex_image = nodes.new(type='ShaderNodeTexImage')
+
+# Load the image into the Image Texture node
+img = bpy.data.images.load(image_path)
+tex_image.image = img
+
+# Connect the Image Texture node to the Base Color input of the Principled BSDF node
+mat.node_tree.links.new(tex_image.outputs['Color'], principled_bsdf.inputs['Base Color'])
+
+# Add an Output node and connect the Principled BSDF to the material output
+material_output = nodes.new(type='ShaderNodeOutputMaterial')
+mat.node_tree.links.new(principled_bsdf.outputs['BSDF'], material_output.inputs['Surface'])
+
+# Optionally, adjust other settings like the Alpha (transparency), subsurface, etc.:
+# Example: Set the alpha to 1 (fully opaque) for the material.
+principled_bsdf.inputs['Alpha'].default_value = 1.0
+
+# Update the object so it uses the material
+obj.active_material = mat
+
+# List of objects to hide from rendering (replace these names with your actual object names)
+objects_to_hide = ['meshparentnode.65300','meshparentnode.67608', 'PIANTANA_1','PIANTANA_2','PIN','PRIMA_RULLIERA','RULLO_TRONCO-CONICI','SALTO','SECONDA_RULLIERA', 'vergella', 'IRB6640_235_255__04 Zona operativa']
+
+# Iterate over each object and set hide_render to True
+for obj_name in objects_to_hide:
+    obj = bpy.data.objects.get(obj_name)
+    if obj:
+        obj.hide_render = True  # This will prevent the object from being rendered
+
+
+#winSize = (3,3)
+#zeroZone = (-1, -1)
+#criteria = (cv2.TERM_CRITERIA_EPS + cv2.TermCriteria_COUNT, 40, 0.0001)
 # Intrinsic parameters from datasheet
 W=14.2*0.001 #mm (blender's camera -> width of a pixel)
 w=4112
@@ -91,10 +147,6 @@ RT = np.array([
     [ 0.00018797, -0.00001037, -0.99999998,  8.81389337],
     [ 0.      ,    0.     ,     0.       ,   1.        ]
 ])
-
-dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-parameters = cv2.aruco.DetectorParameters_create()
-#detector = cv2.aruco.ArucoDetector(dictionary, parameters)
 
 aruco = bpy.data.objects["Aruco"]
 
@@ -144,7 +196,7 @@ y_range = (-4.45, -3.2)
 z_range = (6.6, 7.7)
 
 # Define the number of random positions
-num_positions = 10
+num_positions = 10000
 output_json = []
 
 # Iterate through the positions
@@ -153,7 +205,7 @@ for i in range(num_positions):
     print(i)
     obj.location.y = random.uniform(*y_range)
     obj.location.z = random.uniform(*z_range)
-    if i < 5:
+    if i < 5000:
         x_range = (-9.7, -8.8)
 
         obj.location.x = random.uniform(*x_range)
@@ -174,7 +226,7 @@ for i in range(num_positions):
     bpy.context.view_layer.update()
 
     # Define the file paths
-    img_file = os.path.join(output_dir, f"render_{i:03d}.png")
+    img_file = os.path.join(output_dir, f"render_{i:05d}.png")
 
     # Render the image
     bpy.context.scene.render.filepath = img_file
@@ -184,26 +236,12 @@ for i in range(num_positions):
     aruco_corners_3d = get_aruco_corners(aruco)
     true_corners_2d = project_to_2d(K_true, RT, aruco_corners_3d)
 
-    detected_corners = None
-    if os.path.exists(img_file):    
-        image = cv2.imread(img_file, cv2.IMREAD_GRAYSCALE)
-        corners, ids, rejected = cv2.aruco.detectMarkers(image, dictionary, parameters=parameters)
-
-
-        if len(corners) > 0:
-            # Only consider the first detected marker for simplicity
-            corners = cv2.cornerSubPix(image, corners[0][0], winSize, zeroZone, criteria)
-            detected_corners = corners.tolist()
-
     # Store data in a dictionary
     data = {
         "image_file": img_file,
         "true": true_corners_2d
     }
-    
-    if detected_corners is not None:
-        data["detected"] = detected_corners
-    
+        
     # Append the data for this position to the list
     output_json.append(data)
 
