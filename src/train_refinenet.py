@@ -19,12 +19,12 @@ def custom_collate(batch):
 if __name__ == '__main__':
     config = load_configuration(configs.CONFIG_PATH)
     total = 4
-
+    
     dataset = RefineDataset(config, config.train_labels, config.train_images,
-                            visualize=True, validation=False, total=total)
+                            visualize=False, validation=False, total=total)
 
     dataset_val = RefineDataset(config, config.val_labels, config.val_images,
-                                visualize=True, validation=True, total=total)
+                                visualize=False, validation=True, total=total)
     print(dataset)
     bs_train = max(1, config.bs_train_rn // total)
     bs_val = max(1, config.bs_val_rn // total)

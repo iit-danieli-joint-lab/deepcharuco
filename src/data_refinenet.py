@@ -119,9 +119,13 @@ class RefineDataset(Dataset):
         if idx >= len(self.labels):
             return
         label = self.labels[idx]
+        dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        parameters = cv2.aruco.DetectorParameters()
+        detector = cv2.aruco.ArucoDetector(dictionary, parameters)
+
         try:
         # Try reading the image
-            print('reading')
+            #print('reading')
             image = cv2.imread(os.path.join(self._images_folder, label['image_file']), cv2.IMREAD_COLOR)
             
             # If the image is None, the path might be invalid or the file is unreadable
@@ -129,9 +133,16 @@ class RefineDataset(Dataset):
                 print(f"Unable to read image at { label['image_file']}. Skipping...")
                 self.labels.pop(idx)
                 return 
+            gray = cv2.imread(os.path.join(self._images_folder, label['image_file']), cv2.IMREAD_GRAYSCALE)
+            detected_corners, ids, rejected = detector.detectMarkers(gray)
+
+            if len(detected_corners) < 4:
+                self.labels.pop(idx)
+                print('ARuco not detected')
+                return
             #return image
                 # Apply pipeline of transformations
-            print('still reading')
+            #print('still reading')
             #image, self.detected_corners, *_ = self.transform(image).values() # output an image of the train with the chessboard attached
 
             patch_resized = []  # Just for visualization
