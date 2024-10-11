@@ -1,4 +1,5 @@
 import bpy
+import cv2
 import random
 import os
 from math import radians
@@ -7,7 +8,7 @@ import numpy as np
 import json
 
 # Set the directory where the images and data will be saved
-output_dir = "training_dataset/"
+output_dir = "new_dataset_random/"
 
 # Path to your .blend file
 blend_file_path = "./ArucoBlender.blend"
@@ -69,7 +70,7 @@ bpy.context.scene.cycles.use_denoising = True
 image_path = "./aruco_Example.png"
 
 # Get the object (replace 'ArucoObjectName' with the actual object name in Blender)
-obj = bpy.data.objects['Aruco']
+obj = bpy.data.objects['NewAruco']
 
 # Ensure the object has an active material; if not, create one
 if not obj.data.materials:
@@ -111,15 +112,24 @@ principled_bsdf.inputs['Alpha'].default_value = 1.0
 obj.active_material = mat
 
 # List of objects to hide from rendering (replace these names with your actual object names)
-objects_to_hide = ['meshparentnode.65300','meshparentnode.67608', 'PIANTANA_1','PIANTANA_2','PIN','PRIMA_RULLIERA','RULLO_TRONCO-CONICI','SALTO','SECONDA_RULLIERA', 'vergella', 'IRB6640_235_255__04 Zona operativa']
-
+objects_to_hide = ['Aruco','white','meshparentnode.65300','meshparentnode.67608', 'PIANTANA_1','PIANTANA_2','PIN','PRIMA_RULLIERA','RULLO_TRONCO-CONICI','SALTO','SECONDA_RULLIERA', 'vergella', 'IRB6640_235_255__04 Zona operativa']
+for area in bpy.context.screen.areas:
+    if area.type == 'VIEW_3D':
+        for space in area.spaces:
+            if space.type == 'VIEW_3D':
+                space.shading.type = 'MATERIAL'
 # Iterate over each object and set hide_render to True
 for obj_name in objects_to_hide:
     obj = bpy.data.objects.get(obj_name)
     if obj:
         obj.hide_render = True  # This will prevent the object from being rendered
 
-
+# Ensure there is adequate lighting
+if "Light" not in bpy.data.objects:
+    # Create a new light if one does not exist
+    bpy.ops.object.light_add(type='POINT', location=(0, 0, 10))
+    light = bpy.context.object
+    light.data.energy = 1000  # Adjust light intensity
 #winSize = (3,3)
 #zeroZone = (-1, -1)
 #criteria = (cv2.TERM_CRITERIA_EPS + cv2.TermCriteria_COUNT, 40, 0.0001)
@@ -136,19 +146,103 @@ cy=(h-1)/2
 K_true = np.array(
     [[f/(du), 0.,          cx],
      [0.,         f/(dv),  cy],
-     [0.,         0.,          1.]]
-)
+     [0.,         0.,      1]])   
+
+
 seed_value = 42
 random.seed(seed_value)
 
-RT = np.array([
-    [ 0.99999998, -0.00001684 , 0.00018797 , 8.75476102],
-    [-0.00001684 ,-1.          , 0.00001036 ,-3.96008424],
-    [ 0.00018797, -0.00001037, -0.99999998,  8.81389337],
-    [ 0.      ,    0.     ,     0.       ,   1.        ]
-])
+trueRotation=np.eye(3,3)
+trueRotation[1,1]=-1
+trueRotation[2,2]=-1
+trueTranslation=np.array([8.75677, -3.96, 8.8125])
+RT=np.vstack((np.hstack((trueRotation,trueTranslation.reshape((3,1)))),np.array([0,0,0,1])))
+# Set render output to RGB
+bpy.context.scene.render.image_settings.file_format = 'PNG'  # Can be set to 'JPEG', 'TIFF', etc.
+bpy.context.scene.render.image_settings.color_mode = 'RGB'  # Set to RGB
+if bpy.context.scene.use_nodes:
+    for node in bpy.context.scene.node_tree.nodes:
+        if node.type == 'RGBTOBW':
+            bpy.context.scene.node_tree.nodes.remove(node)  # Remove any RGB to BW nodes
+# Set viewport shading to Material Preview
+#bpy.context.space_data.shading.type = 'MATERIAL'  # 'SOLID', 'MATERIAL', 'RENDERED'
 
-aruco = bpy.data.objects["Aruco"]
+
+aruco = bpy.data.objects["NewAruco"]
+def randomize_texture(obj):
+    # Ensure the object has a material
+    if not obj.data.materials:
+        mat = bpy.data.materials.new(name="RandomMaterial")
+        obj.data.materials.append(mat)
+    else:
+        mat = obj.data.materials[0]    
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    
+    # Remove existing nodes
+    for node in nodes:
+        nodes.remove(node)
+    
+    # Add new Principled BSDF shader
+    principled_bsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
+    
+    # Set base color to white
+    principled_bsdf.inputs['Base Color'].default_value = (1, 1, 1, 1)  # White color
+    
+
+# Add noise texture for dust with random scale
+    noise_texture = nodes.new(type='ShaderNodeTexNoise')
+    noise_texture.inputs['Scale'].default_value = random.uniform(30.0, 100.0)  # Randomize scale for different dust size
+    
+    # Add a ColorRamp to control dust intensity and distribution
+    color_ramp = nodes.new(type="ShaderNodeValToRGB")
+    color_ramp.color_ramp.elements[0].position = random.uniform(0.3, 0.6)  # Randomize the start position of the dust
+    color_ramp.color_ramp.elements[0].color = (random.uniform(0, 0.2), random.uniform(0, 0.2), random.uniform(0, 0.2), 1)  # Random dark dust color
+    color_ramp.color_ramp.elements[1].position = random.uniform(0.7, 0.9)  # Randomize where dust transitions back to white
+    color_ramp.color_ramp.elements[1].color = (1, 1, 1, 1)  # White background color
+    
+    # Add Mapping and Texture Coordinate nodes
+    mapping_node = nodes.new(type="ShaderNodeMapping")
+    texture_coord_node = nodes.new(type="ShaderNodeTexCoord")
+    
+    # Randomize rotation in the Mapping node for different dust locations
+    mapping_node.inputs['Rotation'].default_value[0] = radians(random.uniform(0.0, 360.0))
+    mapping_node.inputs['Rotation'].default_value[1] = radians(random.uniform(0.0, 360.0))
+    mapping_node.inputs['Rotation'].default_value[2] = radians(random.uniform(0.0, 360.0))
+    
+    # Add a MixRGB node to mix the noise texture with the base color
+    mix_rgb = nodes.new(type="ShaderNodeMixRGB")
+    mix_rgb.blend_type = 'MIX'
+    mix_rgb.inputs['Fac'].default_value = random.uniform(0.4, 0.9)  # Randomize dust visibility (0 = no dust, 1 = full dust)
+    
+    # Add another randomization for variation of the dust effect over the surface
+    random_factor_texture = nodes.new(type='ShaderNodeTexNoise')
+    random_factor_texture.inputs['Scale'].default_value = random.uniform(5.0, 15.0)  # Random factor to vary the dust intensity across the surface
+    
+    # Add a ColorRamp to control how random factor affects the mix
+    random_factor_ramp = nodes.new(type="ShaderNodeValToRGB")
+    random_factor_ramp.color_ramp.elements[0].position = random.uniform(0.3, 0.5)  # Random distribution for dust intensity
+    random_factor_ramp.color_ramp.elements[1].position = random.uniform(0.6, 0.9)
+    
+    # Link the nodes
+    links.new(texture_coord_node.outputs["Generated"], mapping_node.inputs["Vector"])
+    links.new(mapping_node.outputs["Vector"], noise_texture.inputs["Vector"])
+    links.new(noise_texture.outputs["Fac"], color_ramp.inputs["Fac"])
+    
+    # Connect ColorRamp to MixRGB for dust effect
+    links.new(color_ramp.outputs["Color"], mix_rgb.inputs['Color1'])  # Dust color (based on noise)
+    links.new(principled_bsdf.outputs['BSDF'], mix_rgb.inputs['Color2'])  # Base white color
+    
+    # Randomize dust intensity via random_factor_texture
+    links.new(random_factor_texture.outputs["Fac"], random_factor_ramp.inputs["Fac"])
+    links.new(random_factor_ramp.outputs["Color"], mix_rgb.inputs["Fac"])  # Use this to control the Mix factor dynamically
+    
+    # Add Material Output node
+    material_output = nodes.new(type='ShaderNodeOutputMaterial')
+    
+    # Link the mix_rgb shader to the Material Output node
+    links.new(mix_rgb.outputs['Color'], material_output.inputs['Surface'])
 
 def get_aruco_corners(obj):
     # Get the vertices of the mesh
@@ -169,7 +263,7 @@ def get_aruco_corners(obj):
     aruco_face_corners_world = [corner.xyz for corner in aruco_face_corners_world]
     
     # Reorder corners to match the desired order: [0, 1, 3, 2]
-    ordered_corners_3d_world = [aruco_face_corners_world[i] for i in [0, 1, 3, 2]]
+    ordered_corners_3d_world = [aruco_face_corners_world[i] for i in [2,3,1,0]]
     
     return ordered_corners_3d_world
 
@@ -189,23 +283,25 @@ def project_to_2d(k_true, RT, corners_3d):
 
 # Get the object to be moved
 obj = bpy.data.objects["Robot_tool"]
-
+white_obj = bpy.data.objects.get('NewWhite')
 # Define the ranges for the movements along X, Y, Z
 
 y_range = (-4.45, -3.2)
 z_range = (6.6, 7.7)
 
 # Define the number of random positions
-num_positions = 10000
+num_positions =300
 output_json = []
-
+start=0
 # Iterate through the positions
-for i in range(num_positions):
+for i in range(start,num_positions):
     # Randomize the location
+#    apply_random_texture(white_obj)
+    randomize_texture(white_obj)  
     print(i)
     obj.location.y = random.uniform(*y_range)
     obj.location.z = random.uniform(*z_range)
-    if i < 5000:
+    if i < 750:
         x_range = (-9.7, -8.8)
 
         obj.location.x = random.uniform(*x_range)
@@ -222,13 +318,19 @@ for i in range(num_positions):
         obj.rotation_euler.x = random.uniform(radians(25), radians(270))
         obj.rotation_euler.y = random.uniform(radians(110), radians(180))
         obj.rotation_euler.z = random.uniform(radians(150), radians(180))
-    # Update the scene
+
+    bpy.context.scene.view_settings.view_transform = 'Filmic'  
+# Update the scene
     bpy.context.view_layer.update()
 
     # Define the file paths
     img_file = os.path.join(output_dir, f"render_{i:05d}.png")
 
-    # Render the image
+    # Set Color Management settings
+    bpy.context.scene.view_settings.view_transform = 'Standard'  # Change as needed
+    bpy.context.scene.view_settings.look = 'None'
+ 
+# Render the image
     bpy.context.scene.render.filepath = img_file
     bpy.ops.render.render(write_still=True)
 
@@ -246,5 +348,5 @@ for i in range(num_positions):
     output_json.append(data)
 
 # Write the collected data to JSON after all iterations
-with open("training_dataset.json", "w") as outfile:
+with open("new_dataset1.json", "w") as outfile:
     json.dump(output_json, outfile, indent=4)
