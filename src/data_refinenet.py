@@ -101,10 +101,11 @@ def create_sample(image: np.ndarray, up_factor, true_corners: tuple):
     print(corner_x,corner_y)
     assert 0 <= corner_x < 64 and 0 <= corner_y < 64
 
-    corner = (int(corner_x),int(corner_y))
+    #corner = (int(corner_x),int(corner_y))
     # Generate heatmap for the true corner
     heat = np.zeros((64, 64), dtype=np.float32)
     _add_gaussian(heat, corner[0], corner[1], 1, 2)
+    #
     corner = (int(corner_x), int(corner_y))
     return patch, heat, corner
 
