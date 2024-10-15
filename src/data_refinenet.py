@@ -66,46 +66,48 @@ def create_sample(image: np.ndarray, up_factor, true_corners: tuple):
 
     # Upscale the patch
     patch_up = cv2.resize(patch_og_res, (192 + 64, 192 + 64), cv2.INTER_CUBIC) # resolution 4 times higher
-
+    # print('patch up shape: ', patch_up.shape)    
     # We already know the true corner position, so no need for sub-pixel refinement
     ref_corner = np.array([patch_up.shape[1] // 2, patch_up.shape[0] // 2])
     #print('up factor' , up_factor)
     corr_x = ((true_corners[0] - center_x) * up_factor)
     corr_y = ((true_corners[1] - center_y) * up_factor)
-    print(corr_x,corr_y)
+    #print(corr_x,corr_y)
    
-    print('Before correction: ', ref_corner)
-    ref_corner[0]+=corr_x
-    ref_corner[1]+=corr_y
+    #print('Before correction: ', ref_corner)
+    #ref_corner[0]+=corr_x
+    #ref_corner[1]+=corr_y
 
-    print('After correction: ', ref_corner)
-    corr_x=int(np.round(corr_x))
-    corr_y=int(np.round(corr_y))
+    #print('After correction: ', ref_corner)
+    #corr_x=int(np.round(corr_x))
+    #corr_y=int(np.round(corr_y))
     # Apply random offset for augmentation
     tl = 32
-    off_x = random.randint(-tl - corr_x, tl - 1 - corr_x)  # random.randint includes BOTH endpoints
-    off_y = random.randint(-tl - corr_y, tl - 1 - corr_y )
- 
-    new_center_x = ref_corner[0] + off_x
-    new_center_y = ref_corner[1] + off_y
-    print('New center: ', (new_center_x,new_center_y))
+    #print('Correction:',(corr_x,corr_y))
+    off_x = random.randint(-tl+1 + np.sign(corr_x)*np.ceil(np.abs(corr_x)), tl - 1 + np.sign(corr_x)*np.ceil(np.abs(corr_x)))  # random.randint includes BOTH endpoints
+    off_y = random.randint(-tl+1 + np.sign(corr_y)*np.ceil(np.abs(corr_y)), tl - 1 + np.sign(corr_y)*np.ceil(np.abs(corr_y)))
+    #print('offset: ',(off_x,off_y))
+    new_center_x = patch_up.shape[1]//2 + off_x
+    new_center_y = patch_up.shape[0]//2 + off_y
+    #print('New center: ', (new_center_x,new_center_y))
     patch_new = patch_up[new_center_y - 96:new_center_y + 96,
                          new_center_x - 96:new_center_x + 96]
+    #print('Patch_new_shape: ',patch_new.shape)
     patch = cv2.resize(patch_new, (24, 24), cv2.INTER_AREA)
-
+    #print(patch.shape)
     # The true corner position in the patch
-    corner_x =  -off_x + tl - 1 - corr_x #- corr_x# Adjust for offset
-    corner_y =  -off_y + tl - 1 - corr_y #- corr_y 
+    corner_x =  -off_x + tl + corr_x # Adjust for offset
+    corner_y =  -off_y + tl + corr_y  
     print(corner_x,corner_y)
     assert 0 <= corner_x < 64 and 0 <= corner_y < 64
 
-    corner = (corner_x, corner_y)
-
+    corner = (int(corner_x),int(corner_y))
     # Generate heatmap for the true corner
     heat = np.zeros((64, 64), dtype=np.float32)
     _add_gaussian(heat, corner[0], corner[1], 1, 2)
-    
+    corner = (int(corner_x), int(corner_y))
     return patch, heat, corner
+
 
 
 class RefineDataset(Dataset):
@@ -138,7 +140,7 @@ class RefineDataset(Dataset):
         dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
         parameters = cv2.aruco.DetectorParameters_create()
        # detector = cv2.aruco.ArucoDetector(dictionary, parameters)
-
+        print('Image: ', label['image_file'])
         try:
         # Try reading the image
             #print('reading')
