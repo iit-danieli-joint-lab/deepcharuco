@@ -98,10 +98,10 @@ def create_sample(image: np.ndarray, up_factor, true_corners: tuple):
     # The true corner position in the patch
     corner_x =  -off_x + tl + corr_x # Adjust for offset
     corner_y =  -off_y + tl + corr_y  
-    print(corner_x,corner_y)
+    #print(corner_x,corner_y)
     assert 0 <= corner_x < 64 and 0 <= corner_y < 64
 
-    #corner = (int(corner_x),int(corner_y))
+    corner = (corner_x,corner_y)
     # Generate heatmap for the true corner
     heat = np.zeros((64, 64), dtype=np.float32)
     _add_gaussian(heat, corner[0], corner[1], 1, 2)
